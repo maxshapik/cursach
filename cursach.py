@@ -2,6 +2,7 @@ import random
 import csv
 import json
 import matplotlib.pyplot as plt
+import time
 
 class Worker:
     def __init__(self, id, salary, contribution, category):
@@ -32,97 +33,242 @@ def generate_workers(n):
     for i in range(n):
         salary = random.randint(1000, 5000)
         contribution = random.uniform(0.5, 1.0)
-        category = random.randint(1, 3)
+        category = random.randint(1, min(10, int(n/2)))
         workers.append(Worker(i + 1, salary, contribution, category))
     return workers
 
-def greedy_algorithm(workers, budget, k):
-    workers.sort(key=lambda w: w.contribution / w.salary, reverse=True)
-    team = []
-    total_salary = 0
-    for worker in workers:
-        if len(team) < k and total_salary + worker.salary <= budget:
-            team.append(worker)
-            total_salary += worker.salary
-    return team
+def manual_input_workers():
+    workers = []
+    print("Введення даних індивідуальної задачі:")
+    n = int(input("Кількість працівників: "))
+    for i in range(n):
+        print(f"\nПрацівник #{i + 1}:")
+        salary = int(input("Зарплата: "))
+        contribution = float(input("Внесок: "))
+        category = int(input("Категорія: "))
+        workers.append(Worker(i + 1, salary, contribution, category))
+    return workers
 
-def ant_colony_algorithm(workers, budget, k, iterations=50, alpha=1, beta=2, rho=0.1, Q=100):
+def greedy_algorithm(workers, S, h, l):
+    for w in workers:
+        w.efficiency = w.contribution / w.salary
+    workers.sort(key=lambda w: w.efficiency, reverse=True)
+
+    selected = []
+    used_categories = set()
+    total_salary = 0
+
+    for w in workers:
+        if len(selected) >= h:
+            break
+        if w.category in used_categories:
+            continue
+        if total_salary + w.salary > S:
+            continue
+
+        selected.append(w)
+        used_categories.add(w.category)
+        total_salary += w.salary
+
+    if len(selected) < l:
+        print("Рішення не задовольняє мінімальну кількість учасників")
+        return []
+
+    return selected
+
+def ant_colony_algorithm(workers, S, h, l, num_ants=10, num_iterations=100, alpha=0.5, beta=1, rho=0.1):
     n = len(workers)
     pheromones = [1.0] * n
+
+    salaries = [w.salary for w in workers]
+    contributions = [w.contribution for w in workers]
+    s_min = min(salaries)
+    p_max = max(contributions)
+    s_max = max(salaries)
+    heuristics = [(w.contribution / p_max) / (w.salary / s_max) for w in workers]
+    upper_bound = p_max * min(h, S // s_min)
+
     best_team = []
     best_score = 0
-    for _ in range(iterations):
-        for _ in range(10):
-            team = []
-            total_salary = 0
-            selected = [False] * n
-            contributions = [w.contribution for w in workers]
-            salaries = [w.salary for w in workers]
-            p_max = max(contributions) if max(contributions) != 0 else 1
-            s_max = max(salaries) if max(salaries) != 0 else 1
-            heuristics = [(w.contribution / p_max) / (w.salary / s_max) for w in workers]
 
-            for _ in range(k):
-                probabilities = []
-                for i in range(n):
-                    if not selected[i] and total_salary + workers[i].salary <= budget:
-                        prob = (pheromones[i] ** alpha) * (heuristics[i] ** beta)
-                        probabilities.append(prob)
-                    else:
-                        probabilities.append(0.0)
-                total = sum(probabilities)
+    for _ in range(num_iterations):
+        teams = []
+        scores = []
+
+        for _ in range(num_ants):
+            selected = []
+            used_categories = set()
+            total_salary = 0
+
+            while True:
+                candidates = [i for i in range(n)
+                              if workers[i].category not in used_categories and
+                                 workers[i] not in selected and
+                                 total_salary + workers[i].salary <= S and
+                                 len(selected) < h]
+
+                if not candidates:
+                    break
+
+                probs = [((pheromones[i] ** alpha) * (heuristics[i] ** beta)) for i in candidates]
+                total = sum(probs)
                 if total == 0:
                     break
-                probabilities = [p / total for p in probabilities]
-                chosen = random.choices(range(n), weights=probabilities)[0]
-                team.append(workers[chosen])
-                total_salary += workers[chosen].salary
-                selected[chosen] = True
+                probs = [p / total for p in probs]
 
-            score = sum(w.contribution for w in team)
-            if score > best_score:
-                best_score = score
-                best_team = team
+                chosen_index = random.choices(range(len(candidates)), weights=probs)[0]
+                chosen = candidates[chosen_index]
+
+                selected.append(workers[chosen])
+                used_categories.add(workers[chosen].category)
+                total_salary += workers[chosen].salary
+
+            if len(selected) >= l:
+                teams.append(selected)
+                scores.append(sum(w.contribution for w in selected))
 
         for i in range(n):
             pheromones[i] *= (1 - rho)
-        for w in best_team:
-            pheromones[workers.index(w)] += Q / (1 + best_score)
+
+        for team, score in zip(teams, scores):
+            delta_tau = score / upper_bound
+            for w in team:
+                pheromones[workers.index(w)] += delta_tau
+
+        if scores:
+            max_score = max(scores)
+            if max_score > best_score:
+                best_score = max_score
+                best_team = teams[scores.index(max_score)]
 
     return best_team
 
-def run_batch_experiments(n_min, n_max, n_step, k, budget_factor, algorithms):
-    results = []
-    for n in range(n_min, n_max + 1, n_step):
-        workers = generate_workers(n)
-        budget = sum(w.salary for w in workers) * budget_factor
-        for alg_name, alg_func in algorithms.items():
-            team = alg_func(workers[:], budget, k)
-            total_contribution = sum(w.contribution for w in team)
-            results.append({"n": n, "algorithm": alg_name, "contribution": total_contribution})
-    return results
+def experiment_iteration_max():
+    m = 10
+    h = 7
+    l = 3
+    n = 15
+    iterations = []
+    scores = []
+    workers = generate_workers(n)
+    S = sum(w.salary for w in workers) * random.uniform(0.5, 0.7)
+    with open("iteration_max_log.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["iteration_count", "best_contribution"])
+        for i in range(150):
+            team = ant_colony_algorithm(workers, S, h, l, m, i + 1)
+            score = sum(w.contribution for w in team)
+            writer.writerow([i + 1, score])
+            iterations.append(i + 1)
+            scores.append(score)
 
-def plot_results(results):
-    plt.clf()
-    algorithms = set(r["algorithm"] for r in results)
-    for alg in algorithms:
-        x = [r["n"] for r in results if r["algorithm"] == alg]
-        y = [r["contribution"] for r in results if r["algorithm"] == alg]
-        plt.plot(x, y, label=alg)
-    plt.xlabel("Number of Workers")
-    plt.ylabel("Total Contribution")
-    plt.title("Comparison of Algorithms")
-    plt.legend()
+    plt.figure(figsize=(8, 5))
+    plt.plot(iterations, scores, marker='o', linestyle='-', color='blue')
+    plt.xlabel("Кількість ітерацій")
+    plt.ylabel("Найкращий внесок")
+    plt.title("Вплив кількості ітерацій на результат")
     plt.grid(True)
+    plt.tight_layout()
     plt.show()
 
-def save_results_to_csv(results, filename):
-    with open(filename, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["n", "algorithm", "contribution"])
-        writer.writeheader()
-        writer.writerows(results)
+def experiment_alpha_beta():
+    alpha_values = [0.1, 0.25, 0.33, 0.5, 0.75, 1, 1.5, 2, 3]
+    beta = 1
+    rho = 0.1
+    m = 10
+    h = 7
+    l = 3
+    n = 30
+    K = 30
+    results = []
+    workers = generate_workers(n)
+    S = sum(w.salary for w in workers) * random.uniform(0.5, 0.7)
+    with open("alpha_beta_experiment.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["alpha", "average_contribution"])
+        for alpha in alpha_values:
+            scores = []
+            for _ in range(K):
+                team = ant_colony_algorithm(workers, S, h, l, m, 50, alpha=alpha, beta=beta, rho=rho)
+                scores.append(sum(w.contribution for w in team))
+            avg_score = sum(scores) / K
+            writer.writerow([alpha, avg_score])
+            results.append((alpha, avg_score))
 
-def save_results(workers, filename):
+    alphas, scores = zip(*results)
+    plt.figure(figsize=(10, 6))
+    plt.plot(alphas, scores, marker='o', linestyle='-', color='blue')
+    plt.xlabel("Alpha")
+    plt.ylabel("Середній вклад")
+    plt.title("Вплив співввідношення параметрів α та β на якість розв'язку")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+def experiment_problem_size():
+    m = 10
+    h = 7
+    l = 3
+    K = 30
+    sizes = []
+    greedy_scores_all, greedy_times_all = [], []
+    aco_scores_all, aco_times_all = [], []
+    with open("size_experiment.csv", "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["n", "greedy_avg_contribution", "greedy_avg_time", "aco_avg_contribution", "aco_avg_time"])
+        for n in range(10, 101, 10):
+            greedy_scores, greedy_times = [], []
+            aco_scores, aco_times = [], []
+            workers = generate_workers(n)
+            S = sum(w.salary for w in workers) * random.uniform(0.5, 0.7)
+            for _ in range(K):     
+                start = time.time()
+                team_greedy = greedy_algorithm(workers[:], S, h, l)
+                greedy_times.append(time.time() - start)
+                greedy_scores.append(sum(w.contribution for w in team_greedy))
+
+                start = time.time()
+                team_aco = ant_colony_algorithm(workers[:], S, h, l, m)
+                aco_times.append(time.time() - start)
+                aco_scores.append(sum(w.contribution for w in team_aco))
+
+            avg_greedy_score = sum(greedy_scores) / K
+            avg_greedy_time = sum(greedy_times) / K
+            avg_aco_score = sum(aco_scores) / K
+            avg_aco_time = sum(aco_times) / K
+
+            writer.writerow([n, avg_greedy_score, avg_greedy_time, avg_aco_score, avg_aco_time])
+
+            sizes.append(n)
+            greedy_scores_all.append(avg_greedy_score)
+            greedy_times_all.append(avg_greedy_time)
+            aco_scores_all.append(avg_aco_score)
+            aco_times_all.append(avg_aco_time)
+
+    plt.figure(figsize=(12, 5))
+
+    plt.subplot(1, 2, 1)
+    plt.plot(sizes, greedy_scores_all, label="Жадібний алгоритм", marker='o')
+    plt.plot(sizes, aco_scores_all, label="Алгоритм мурашиної колонії", marker='o')
+    plt.title("Залежність внеску від розміру задачі")
+    plt.xlabel("Кількість працівників")
+    plt.ylabel("Середній внесок")
+    plt.grid(True)
+    plt.legend()
+
+    plt.subplot(1, 2, 2)
+    plt.plot(sizes, greedy_times_all, label="Жадібний алгоритм", marker='o')
+    plt.plot(sizes, aco_times_all, label="Алгоритм мурашиної колонії", marker='o')
+    plt.title("Залежність часу виконання від розміру задачі")
+    plt.xlabel("Кількість працівників")
+    plt.ylabel("Середній час, с")
+    plt.grid(True)
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()   
+
+def save_workers(workers, filename):
     with open(filename, "w") as f:
         json.dump([w.to_dict() for w in workers], f, indent=2)
 
@@ -156,28 +302,6 @@ def edit_workers(workers):
         except ValueError:
             print("Невірний ввід. Спробуйте ще раз.")
 
-def get_experiment_config():
-    return {
-        "n_min": 10,
-        "n_max": 100,
-        "n_step": 10,
-        "k": 5,
-        "budget_factor": 0.4,
-        "algorithms": {
-            "Greedy": greedy_algorithm,
-            "Ant Colony": ant_colony_algorithm,
-        },
-    }
-
-def run_configured_experiments():
-    config = get_experiment_config()
-    results = run_batch_experiments(
-        config["n_min"], config["n_max"], config["n_step"],
-        config["k"], config["budget_factor"], config["algorithms"]
-    )
-    plot_results(results)
-    save_results_to_csv(results, "experiment_results.csv")
-
 def main():
     workers = []
     while True:
@@ -188,6 +312,7 @@ def main():
         print("4. Запустити алгоритми")
         print("5. Зберегти працівників у файл")
         print("6. Запустити експерименти")
+        print("7. Ввести працівників вручну")
         print("0. Вийти")
         choice = input("Ваш вибір: ")
 
@@ -200,21 +325,38 @@ def main():
         elif choice == "3":
             edit_workers(workers)
         elif choice == "4":
-            budget = float(input("Бюджет: "))
-            k = int(input("Кількість працівників у команді: "))
-            greedy_team = greedy_algorithm(workers[:], budget, k)
-            ant_team = ant_colony_algorithm(workers[:], budget, k)
+            S = float(input("Бюджет: "))
+            h = int(input("Макс. кількість працівників: "))
+            l = int(input("Мін. кількість працівників: "))
+            greedy_team = greedy_algorithm(workers[:], S, h, l)
+            ant_team = ant_colony_algorithm(workers[:], S, h, l)
             print("\nGreedy Team:")
             for w in greedy_team:
                 print(vars(w))
+            print(f"Сума внесків (Greedy): {sum(w.contribution for w in greedy_team):.2f}")
             print("\nAnt Colony Team:")
             for w in ant_team:
                 print(vars(w))
+            print(f"Сума внесків (Ant Colony): {sum(w.contribution for w in ant_team):.2f}")
         elif choice == "5":
             filename = input("Ім'я файлу: ")
-            save_results(workers, filename)
+            save_workers(workers, filename)
         elif choice == "6":
-            run_configured_experiments()
+            print("\nОберіть експеримент:")
+            print("1. Визначення параметра умови завершення роботи алгоритму мурашиної колонії")
+            print("2. Дослідження впливу співвідношення параметрів α та β на ефективність роботи алгоритму")
+            print("3. Дослідження впливу кількості працівників на час роботи жадібного алгоритму та алгоритму мурашиної колонії")
+            exp_choice = input("Ваш вибір: ")
+            if exp_choice == "1":
+                experiment_iteration_max()
+            elif exp_choice == "2":
+                experiment_alpha_beta()
+            elif exp_choice == "3":
+                experiment_problem_size()
+            else:
+                print("Невірний вибір експерименту.")
+        elif choice == "7":
+            workers = manual_input_workers()
         elif choice == "0":
             break
         else:

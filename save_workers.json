@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "salary": 3000,
+    "contribution": 0.75,
+    "category": 1
+  },
+  {
+    "id": 2,
+    "salary": 2800,
+    "contribution": 0.8,
+    "category": 2
+  },
+  {
+    "id": 3,
+    "salary": 3500,
+    "contribution": 0.9,
+    "category": 3
+  },
+  {
+    "id": 4,
+    "salary": 2600,
+    "contribution": 0.65,
+    "category": 1
+  },
+  {
+    "id": 5,
+    "salary": 2400,
+    "contribution": 0.7,
+    "category": 2
+  }
+]
