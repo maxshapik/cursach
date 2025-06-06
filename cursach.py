@@ -369,7 +369,7 @@ def main():
         elif choice == "0":
             break
         else:
-            print("Невірний вибір. Спробуйте ще раз.")
+            print("Неправильний вибір. Спробуйте ще раз.")
 
 if __name__ == "__main__":
     main()
