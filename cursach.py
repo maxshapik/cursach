@@ -250,7 +250,7 @@ def experiment_problem_size():
     plt.subplot(1, 2, 1)
     plt.plot(sizes, greedy_scores_all, label="Жадібний алгоритм", marker='o')
     plt.plot(sizes, aco_scores_all, label="Алгоритм мурашиної колонії", marker='o')
-    plt.title("Залежність внеску від розміру задачі")
+    plt.title("Порівняння результатів алгоритмів")
     plt.xlabel("Кількість працівників")
     plt.ylabel("Середній внесок")
     plt.grid(True)
@@ -319,9 +319,15 @@ def main():
         if choice == "1":
             n = int(input("Кількість працівників: "))
             workers = generate_workers(n)
+            print("\nПоточні працівники:")
+            for w in workers:
+              print(f"{w.id}. Зарплата: {w.salary}, Внесок: {w.contribution:.2f}, Категорія: {w.category}")
         elif choice == "2":
             filename = input("Ім'я файлу: ")
             workers = load_workers(filename)
+            print("\nПоточні працівники:")
+            for w in workers:
+             print(f"{w.id}. Зарплата: {w.salary}, Внесок: {w.contribution:.2f}, Категорія: {w.category}")
         elif choice == "3":
             edit_workers(workers)
         elif choice == "4":
@@ -357,6 +363,9 @@ def main():
                 print("Невірний вибір експерименту.")
         elif choice == "7":
             workers = manual_input_workers()
+            print("\nПоточні працівники:")
+            for w in workers:
+             print(f"{w.id}. Зарплата: {w.salary}, Внесок: {w.contribution:.2f}, Категорія: {w.category}")
         elif choice == "0":
             break
         else:
